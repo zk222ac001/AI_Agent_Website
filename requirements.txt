@@ -1,0 +1,6 @@
+agno
+groq
+flask
+flask-cors
+requests
+python-dotenv
