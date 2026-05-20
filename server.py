@@ -17,13 +17,11 @@ class BaseAgent:
         self.api_key = os.getenv("GROQ_API_KEY")
 
     def get_response(self, prompt):
-
         try:
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json"
             }
-
             data = {
                 "model": "llama-3.3-70b-versatile",
                 "messages": [

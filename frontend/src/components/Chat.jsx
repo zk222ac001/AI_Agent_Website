@@ -4,29 +4,50 @@ import axios from "axios";
 function Chat({ agentType, initialMessage, agentInitials, directQuestion }) {
   const [messages, setMessages] = useState(() =>
     initialMessage
-      ? [
-          {
-            content: initialMessage,
-            isUser: false,
-          },
-        ]
+      ? [{ content: initialMessage, isUser: false }]
       : []
   );
+
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+
+  const containerRef = useRef(null);
   const messagesEndRef = useRef(null);
   const processedQuestionsRef = useRef(new Set());
 
   const API_BASE_URL = "http://127.0.0.1:5001";
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+  // -----------------------------
+  // SMART SCROLL (NO JUMPING)
+  // -----------------------------
+  const isNearBottom = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return true;
 
+    const threshold = 120;
+    return (
+      el.scrollHeight - el.scrollTop - el.clientHeight < threshold
+    );
+  }, []);
+
+  const scrollToBottom = useCallback(
+    (force = false) => {
+      if (force || isNearBottom()) {
+        messagesEndRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "end",
+        });
+      }
+    },
+    [isNearBottom]
+  );
+
+  // -----------------------------
+  // SEND MESSAGE
+  // -----------------------------
   const handleSendMessage = useCallback(
     async (questionOverride = null) => {
       const messageToSend = questionOverride || input;
-
       if (!messageToSend.trim()) return;
 
       const userMessage = {
@@ -34,44 +55,31 @@ function Chat({ agentType, initialMessage, agentInitials, directQuestion }) {
         isUser: true,
       };
 
-      setMessages((prev) => [...prev, userMessage]);
-
-      if (!questionOverride) {
-        setInput("");
-      }
-
+      setInput("");
       setIsLoading(true);
 
+      setMessages((prev) => [...prev, userMessage]);
+
       try {
-        const response = await axios.post(
+        const res = await axios.post(
           `${API_BASE_URL}/api/${agentType}`,
-          {
-            message: messageToSend,
-          },
-          {
-            headers: {
-              "Content-Type": "application/json",
-              "Access-Control-Allow-Origin": "*",
-            },
-          }
+          { message: messageToSend }
         );
 
-        if (response.data && response.data.response) {
+        const aiResponse = res.data?.response;
+
+        if (aiResponse) {
           setMessages((prev) => [
             ...prev,
-            {
-              content: response.data.response,
-              isUser: false,
-            },
+            { content: aiResponse, isUser: false },
           ]);
         }
-      } catch (error) {
-        console.error("Error sending message:", error);
+      } catch {
         setMessages((prev) => [
           ...prev,
           {
             content:
-              "Sorry, there was an error connecting to the AI agent. Please make sure the Flask server is running at http://127.0.0.1:5001/",
+              "Error connecting to AI agent. Please check backend.",
             isUser: false,
           },
         ]);
@@ -79,153 +87,192 @@ function Chat({ agentType, initialMessage, agentInitials, directQuestion }) {
         setIsLoading(false);
       }
     },
-    [input, agentType, API_BASE_URL]
+    [input, agentType]
   );
 
+  // -----------------------------
+  // ENTER KEY
+  // -----------------------------
   const handleKeyPress = (e) => {
-    if (e.key === "Enter") {
-      handleSendMessage();
-    }
+    if (e.key === "Enter") handleSendMessage();
   };
 
-  const cleanQuestion = (question) => {
-    return question.replace(/\s*\[\d+\]\s*$/, "");
-  };
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
-
+  // -----------------------------
+  // DIRECT QUESTION
+  // -----------------------------
   useEffect(() => {
     if (
-      directQuestion &&
-      directQuestion.trim() !== "" &&
-      !processedQuestionsRef.current.has(directQuestion)
+      !directQuestion ||
+      processedQuestionsRef.current.has(directQuestion)
     ) {
-      const cleanedQuestion = cleanQuestion(directQuestion);
-      handleSendMessage(cleanedQuestion);
-      processedQuestionsRef.current.add(directQuestion);
+      return;
     }
+
+    processedQuestionsRef.current.add(directQuestion);
+    handleSendMessage(directQuestion);
   }, [directQuestion, handleSendMessage]);
 
-  const renderContent = (content) => {
-    let formattedContent = content;
+  // -----------------------------
+  // SCROLL EFFECT (FIXED)
+  // -----------------------------
+  useEffect(() => {
+    const t = setTimeout(() => {
+      scrollToBottom(false);
+    }, 50);
 
-    formattedContent = formattedContent.replace(
-      /#{6}\s+(.*?)(?=\n|$)/g,
-      "<h6>$1</h6>"
-    );
-    formattedContent = formattedContent.replace(
-      /#{5}\s+(.*?)(?=\n|$)/g,
-      "<h5>$1</h5>"
-    );
-    formattedContent = formattedContent.replace(
-      /#{4}\s+(.*?)(?=\n|$)/g,
-      "<h4>$1</h4>"
-    );
-    formattedContent = formattedContent.replace(
-      /#{3}\s+(.*?)(?=\n|$)/g,
-      "<h3>$1</h3>"
-    );
-    formattedContent = formattedContent.replace(
-      /#{2}\s+(.*?)(?=\n|$)/g,
-      "<h2>$1</h2>"
-    );
-    formattedContent = formattedContent.replace(
-      /#{1}\s+(.*?)(?=\n|$)/g,
-      "<h1>$1</h1>"
-    );
+    return () => clearTimeout(t);
+  }, [messages.length, scrollToBottom]);
 
-    formattedContent = formattedContent.replace(
-      /\*\*(.*?)\*\*/g,
-      "<strong>$1</strong>"
-    );
-
-    formattedContent = formattedContent.replace(/\*(.*?)\*/g, "<em>$1</em>");
-
-    formattedContent = formattedContent.replace(/`(.*?)`/g, "<code>$1</code>");
-
-    formattedContent = formattedContent.replace(
-      /\[(.*?)\]\((.*?)\)/g,
-      '<a href="$2" target="_blank">$1</a>'
-    );
-
-    formattedContent = formattedContent.replace(
-      /^\s*\*\s+(.*?)(?=\n|$)/gm,
-      "<li>$1</li>"
-    );
-    formattedContent = formattedContent.replace(
-      /<li>(.*?)<\/li>(?:\s*<li>.*?<\/li>)*/g,
-      "<ul>$&</ul>"
-    );
-
-    formattedContent = formattedContent.replace(
-      /^\s*\d+\.\s+(.*?)(?=\n|$)/gm,
-      "<li>$1</li>"
-    );
-    formattedContent = formattedContent.replace(
-      /<li>(.*?)<\/li>(?:\s*<li>.*?<\/li>)*/g,
-      "<ol>$&</ol>"
-    );
-
-    return { __html: formattedContent };
-  };
-
+  // -----------------------------
+  // RENDER
+  // -----------------------------
   return (
-    <div className="chat-container">
-      <div className="chat-messages" id={`${agentType}-messages`}>
-        {messages.map((message, index) => (
+    <div
+      ref={containerRef}
+      className="chat-container"
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        width: "100%",
+        background: "#eff6ff", // light blue
+        borderRadius: "12px",
+      }}
+    >
+      {/* MESSAGES */}
+      <div
+        className="chat-messages"
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          padding: "12px",
+        }}
+      >
+        {messages.map((msg, i) => (
           <div
-            key={index}
+            key={i}
             className={`message ${
-              message.isUser ? "user-message" : "agent-message"
+              msg.isUser ? "user-message" : "agent-message"
             }`}
+            style={{
+              marginBottom: "12px",
+              display: "flex",
+              gap: "10px",
+            }}
           >
-            {!message.isUser && (
-              <div className="message-avatar">
-                <div className="avatar-placeholder">
-                  {agentInitials || "AI"}
-                </div>
+            {!msg.isUser && (
+              <div
+                className="message-avatar"
+                style={{
+                  width: "32px",
+                  height: "32px",
+                  borderRadius: "50%",
+                  background: "var(--accent-bg)",
+                  color: "var(--accent)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "12px",
+                  border: "1px solid var(--border)",
+                }}
+              >
+                {agentInitials || "AI"}
               </div>
             )}
-            <div className="message-content">
-              <div dangerouslySetInnerHTML={renderContent(message.content)} />
+
+            <div
+              className="message-content"
+              style={{
+                background: msg.isUser
+                  ? "var(--accent-bg)"
+                  : "transparent",
+                padding: "10px 12px",
+                borderRadius: "10px",
+                maxWidth: "75%",
+                color: "var(--text)",
+                fontSize: "15px",
+              }}
+            >
+              {msg.content}
             </div>
           </div>
         ))}
+
+        {/* LOADING DOTS */}
         {isLoading && (
-          <div className="message agent-message">
-            <div className="message-avatar">
-              <div className="avatar-placeholder">{agentInitials || "AI"}</div>
+          <div
+            className="message agent-message"
+            style={{ display: "flex", gap: "10px" }}
+          >
+            <div
+              className="message-avatar"
+              style={{
+                width: "32px",
+                height: "32px",
+                borderRadius: "50%",
+                background: "var(--accent-bg)",
+                color: "var(--accent)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              {agentInitials || "AI"}
             </div>
-            <div className="message-content">
-              <p className="loading-dots">Thinking</p>
+
+            <div className="typing-dots">
+              <span></span>
+              <span></span>
+              <span></span>
             </div>
           </div>
         )}
+
         <div ref={messagesEndRef} />
       </div>
-      <div className="chat-input-container">
-        <div className="chat-input-group">
-          <input
-            type="text"
-            id={`${agentType}-input`}
-            className="chat-input"
-            placeholder="Type your message..."
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyPress={handleKeyPress}
-          />
-          <button
-            id={`${agentType}-send`}
-            className="chat-send-button"
-            onClick={() => handleSendMessage()}
-          >
-            <i className="fa-solid fa-paper-plane mr-2"></i>Send
-          </button>
-        </div>
+
+      {/* INPUT AREA */}
+      <div
+        className="chat-input-container"
+        style={{
+          display: "flex",
+          gap: "8px",
+          padding: "10px",
+          borderTop: "1px solid var(--border)",
+          background: "transparent",
+        }}
+      >
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyPress}
+          placeholder="Type your message..."
+          style={{
+            flex: 1,
+            padding: "10px",
+            borderRadius: "8px",
+            border: "1px solid var(--border)",
+            background: "transparent",
+            color: "var(--text)",
+            outline: "none",
+            fontSize: "15px",
+            fontWeight: 600,
+            opacity: 0.9,
+            letterSpacing: 0.3
+          }}
+        />
+
+        {/* SEND BUTTON */}
+        <button
+          onClick={() => handleSendMessage()}
+          disabled={isLoading}
+          className="chat-send-button"
+        >
+          {isLoading ? <span className="spinner" /> : "Send"}
+        </button>
       </div>
     </div>
   );
 }
+
 export default Chat;
