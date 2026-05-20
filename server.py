@@ -5,7 +5,6 @@ import json
 import requests
 from flask_cors import CORS
 
-
 load_dotenv()
 
 app = Flask(__name__)
@@ -15,7 +14,6 @@ class BaseAgent:
     def __init__(self, name, description):
         self.name = name
         self.description = description
-
         self.api_key = os.getenv("GROQ_API_KEY")
 
     def get_response(self, prompt):
@@ -27,7 +25,7 @@ class BaseAgent:
             }
 
             data = {
-                "model": "llama3-8b-8192",
+                "model": "llama-3.3-70b-versatile",
                 "messages": [
                     {"role": "system", "content": f"You are {self.name}, {self.description}. Respond in a helpful, concise, and professional manner."},
                     {"role": "user", "content": prompt}
@@ -176,7 +174,6 @@ def block_default_images():
     response.headers['Cache-Control'] = 'public, max-age=31536000'
     response.headers['Expires'] = 'Thu, 31 Dec 2037 23:59:59 GMT'
     return response
-
 
 @app.route('/api/welcome', methods=['POST'])
 def welcome_agent_endpoint():
